@@ -1,0 +1,407 @@
+---
+title: "Final Project Step 3"
+format: pdf
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+# Final Project: Heart Attack Risk
+
+By:
+
+-   Sofia Kruse Robertson 3004280
+-   James Cha 9529140
+-   Limeng Ye (7244478)
+-   CHRIS ZARAGOZA (A1A0T32)
+-   Zhuoqun Zhu (7257868)
+
+```{r,echo = FALSE}
+setwd("~/Desktop/R_WorkTable/PSTAT100/data_100_library")
+heartData <- read.csv("SampledHeartData2025-05-27.csv")
+heartData$diabetes <- as.factor(heartData$diabetes)
+heartData$heart_attack <- as.factor(heartData$heart_attack)
+library(knitr)
+
+knitr::opts_chunk$set(message =  FALSE)
+knitr::opts_chunk$set(warning =  FALSE)
+knitr::opts_chunk$set(error =  FALSE)
+bfcolor <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{\\textbf{%s}}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'><b>%s</b></span>", color, x)
+  } else x
+}
+library(dplyr)
+library(knitr)
+library(tidyr)
+library(e1071)
+library(readr)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+heart_disease <- read_csv('HeartAttackRisk.csv')
+```
+
+------------------------------------------------------------------------
+
+### **Abstract and Introduction**
+
+Cardiovascular disease remains one of the leading causes of death worldwide, with heart attacks being a one of many concerns in public health in North America. As heart disease continues to affect millions annually, identifying and analyzing key risk factors is essential for prevention, early detection, and informed medical intervention. This project centers on the **Heart Attack Assessment Dataset**, a synthetic collection of 1,000 patient records created by **Shriyash Jagtap**. The data set, published on **Kaggle** on **January 29, 2025**, and retrieved on **April 24, 2025**, offers a valuable simulation of health data intended for use in statistical modeling.
+
+The data set includes ten variables—six continuous numeric features (**age**, **total_cholesterol**, **ldl**, **hdl**, **systolic_bp**, and **diastolic_bp**) and four binary categorical variables (**sex**, **smoking**, **diabetes**, and **heart_attack**). These variables represent a combination of demographic, physiological, and lifestyle characteristics, enabling a comprehensive, multidimensional analysis of heart disease risk. The primary aim of this project is to determine which of these variables are strongly associated with the likelihood of a heart attack and to develop predictive models that can classify patients based on risk levels.
+
+Guided by the hypothesis that elevated cholesterol, high blood pressure, smoking, and diabetes are significant contributors to cardiovascular events, we employ a wide array of data science tools and modeling approaches. These include exploratory data analysis (EDA), logistic regression (both with and without interaction terms), t-tests, and adjusted linear regression models to investigate potential risk factors. We also evaluate predictive performance using cross-validation, confusion matrices, ROC curves, and AUC scores. Our models are implemented using glm() for generalized linear modeling, with packages such as dplyr, ggplot2, e1071, ROCR, and car used for data manipulation, visualization, and diagnostic analysis.
+
+This project demonstrates how data science can be an informing healthcare too in reinforcing preventative strategies against heart disease. The insights generated may be useful for guiding clinical screening and public health policy.
+
+\
+**Citation**:\
+Jagtap, Shriyash. Heart Attack Risk Assessment Dataset. Kaggle, 29 Jan. 2025. Retrieved 24 Apr. 2025,<https://www.kaggle.com/datasets/shriyashjagtap/heart-attack-risk-assessment-dataset/data>.
+
+------------------------------------------------------------------------
+
+**Question 1**
+
+Can risk be compensated with good metrics in certain variables? For example, can people with good metrics in one area (like high HDL) offset risks from risky behaviors like smoking?
+
+```{r}
+#| include: false
+
+# draw a random sample
+set.seed(20250509)
+heart_disease_sample <- heart_disease[sample(nrow(heart_disease), 500), ]
+```
+
+## Hypothesis 1 Exploration
+
+### Does high HDL offset the inherent risk carried by smoking?
+
+$H_0$: $\beta_\text{HDLxsmoking}$ = 0, $H_1$: $\beta_\text{HDLxsmoking}$ \< 0
+
+Let us explore whether $\beta_\text{HDLxsmoking}$, or the interaction effect between HDL and smoking is 0 or negative.
+
+Let us set up a basic equation.
+
+$$
+\text{logit}(\Pr(\text{heart\_attack})) = \beta_0 + \beta_1 \cdot \text{Smoking} + \beta_2 \cdot \text{HDL} + \beta_3 \cdot (\text{Smoking} \times \text{HDL})
+$$
+
+We will use the logit link function to test our theory; we use it since heart_attack is a binomial variable, and we want the probability to be between 0 and 1.
+
+```{r}
+# Basic Model
+model <- glm(heart_attack ~ smoking + hdl + smoking:hdl, family = binomial(), data = heart_disease_sample)
+summary(model)
+```
+
+```{r}
+# Full model
+model <- glm(heart_attack ~ smoking + hdl + sex + age + total_cholesterol + smoking:hdl, family = binomial(), data = heart_disease_sample)
+summary(model)
+```
+
+```{r}
+deviance_resid <- residuals(model, type = "deviance")
+
+plot(fitted(model), deviance_resid, 
+     xlab = "Fitted values", ylab = "pearson Residuals", 
+     main = "Residuals vs Fitted")
+abline(h = 0, lty = 2, col = "red")
+```
+
+The model seems to be under performing; with fitted values consistently going down as fitted values. Then again, this residual graph itself may not be a very reliable graph, as it does not seem to be designed for logistic regression.
+
+<https://bookdown.org/jefftemplewebb/IS-6489/logistic-regression.html>
+
+In either cases, HDL is protective against heart attacks overall, especially in non-smokers, with a negative estimate at -0.10509 (for base model) and -0.076843 (for full model) odds per mg/dL of HDL, with a p-value less than alpha = 0.05 (2.34e-05 for the base model, 0.003467 for the full model).
+
+In smokers, HDL’s protective effect appears weaker, not stronger — and that difference is not statistically significant. Focusing on the full model, beta_2 (HDL coefficient for non-smokers) is at –0.0768, giving us the conclusion that each +1 mg/dL HDL multiplies the odds by exp(–0.0768) = 0.93 (about –7%). Beta_1 + beta_3 (HDL coefficient for smokers) is at –0.0768 + 0.037124 = -0.039676, giving us the conclusion that each +1 mg/dL HDL multiplies the odds by exp(-0.039676) = 0.96 (about –4%). However, the difference between the two coefficients (Beta_2 vs Beta_1 + Beta_3) is not significant, since the interaction term has a p-value of 0.30, which is over alpha = 0.05; thus, we are unable to reject the null hypothesis that high HDL does not offset extra risk caused by smoking.
+
+In short, HDL helps, but it doesn’t “cancel out” smoking; quitting remains the safer choice. Based on both models and within this sampled dataset, there is no evidence that high HDL offsets smoking-related heart attack risk.
+
+## Hypothesis 2
+
+### Logistic
+
+```{r}
+set.seed(252705)
+train.indice = sample(nrow(heartData), 0.8 * nrow(heartData)) # 80% to training 
+train = heartData[train.indice, ]
+test = heartData[-train.indice, ]
+```
+
+Here we split our data to training and testing data with a 80% split to training.
+
+```{r, echo = FALSE}
+# interaction
+model_logInt <- glm(heart_attack ~ diabetes + log(total_cholesterol) + log(total_cholesterol):diabetes,
+data = train, family = "binomial") # logistic regression for categorical
+modelsumlInt <- summary(model_logInt)
+
+
+
+# no interaction
+model_log <- glm(heart_attack ~ diabetes + log(total_cholesterol),
+data = train, family = "binomial") # logistic regression for categorical
+modelsuml <- summary(model_log)
+
+kable(modelsumlInt$coefficients, caption = "Coefficients for Logistic Model with Interaction")
+kable(modelsuml$coefficients, caption = "Coefficients for Logistic Model with No Interaction")
+
+
+```
+
+Here are our two models so far, one with an interaction, but we notice that the interaction is highly insignificant using the Bonferonni-adjusted significance level of $\frac{.05}{3} = 0.00333$. This suggests that the interaction between the presence of diabetes with a persons total cholesteral level, with a p-value of 0.3135456, does not give statistically significant evidence in having an effect on heart attack status. We also see that having the interaction changes the signifcance of having diabetes to a p-value of 0.2371083, whereas in our model without the interaction, it is significant at a Bonferonni-adjusted significance level of $\frac{.05}{2} = 0.0025$ with a p-value of 0.0000238. Otherwise, log(total_cholesterol) is significant in both models with a p-value of 0.0004220 in our interaction model and a p-value of 0.0003119 in our non-interaction model, suggesting the presence of higher cholesterol has statistically significant effect on heart attack status.
+
+```{r, echo = FALSE}
+kable(modelsuml[["aic"]], caption = "AIC for Logistic Model with No Interaction")
+kable(modelsumlInt[["aic"]], caption = "AIC for Logistic Model with Interaction")
+
+```
+
+We also take a look at our AIC scores, and take the lower and more significant model, which is the non-interaction model with an AIC score of `r modelsuml[["aic"]]`, which is just barely an improvement. Here we have our coefficients for our chosen logistic model without the interaction $\log(\frac{p}{1-p})=−21.33834+1.95139⋅diabetes+3.53132⋅log(totalCholesterol)$ which gives us the log-odds of a heart attack. We use the equation $p = \frac{1}{1 + e^{−21.33834+1.95139⋅diabetes+3.53132⋅log(totalCholesterol)}}$ for the probability of a heart attack occurring. The equation take the log of total_cholesterol.
+
+```{r}
+
+kable(anova(model_log, test = "Chisq"), caption= "Chisq Test")
+# chisq Test
+```
+
+We see that our predictors add value to our model compared to the null model. The terms are added sequentially, first to last, and continue to decrease our residual deviance.
+
+```{r}
+library(car)
+kable(vif(model_log), caption = "VIF of Predictors")
+# take a look at VIF
+```
+
+Our VIF for each predictor is less than 5 suggesting a lack of multicollinearity.
+
+```{r}
+library(dbplyr)
+library(ROCR)
+library(tidyverse)
+
+set.seed(252705)
+# error rates
+prob_training <- predict(model_log, type="response")
+prob_test <- predict(model_log, newdata = test, type = "response")
+calc_error_rate <- function(predicted.value, true.value){ return(mean(true.value != predicted.value))
+}
+train = train %>%
+  mutate(pred_dep =as.factor(ifelse(prob_training<=0.355, 0, 1)))
+# Add predicted binary to test data
+test = test %>%
+  mutate(pred_dep =as.factor(ifelse(prob_test<=0.355, 0, 1)))
+
+kable(table(Predicted = train$pred_dep, Actual = train$heart_attack), caption = "Confusion Matrix for Training")
+
+kable(table(Predicted = test$pred_dep, Actual = test$heart_attack), caption = "Confusion Matrix for Test")
+
+# Error rate for train
+train_rate <- calc_error_rate(train$pred_dep, train$heart_attack) # Error rate for test
+test_rate <- calc_error_rate(test$pred_dep, test$heart_attack)
+kable(train_rate, caption = "Training Error Rate")
+kable(test_rate, caption = "Test Error Rate")
+```
+
+Here we take a look at our confusion matrices of prediction accuracy and our training and test error rates, both of which look to be pretty low at `r train_rate` and `r test_rate`. We can compare this to our earlier model with the interaction. We have also tuned our decision threshold to .355 after slowly decreasing it from .5 to come up with the best testing and training error rates.
+
+```{r}
+set.seed(252705)
+# error rates
+prob_training <- predict(model_logInt, type="response")
+prob_test <- predict(model_logInt, newdata = test, type = "response")
+calc_error_rate <- function(predicted.value, true.value){ return(mean(true.value != predicted.value))
+}
+train = train %>%
+  mutate(pred_dep1 =as.factor(ifelse(prob_training<=0.355, 0, 1)))
+# Add predicted binary to test data
+test = test %>%
+  mutate(pred_dep1 =as.factor(ifelse(prob_test<=0.355, 0, 1)))
+
+kable(table(Predicted = train$pred_dep1, Actual = train$heart_attack), caption = "Confusion Matrix for Training with Interaction")
+
+kable(table(Predicted = test$pred_dep1, Actual = test$heart_attack), caption = "Confusion Matrix for Test with Interaction")
+
+# Error rate for train
+train_rateI <- calc_error_rate(train$pred_dep1, train$heart_attack) # Error rate for test
+test_rateI <- calc_error_rate(test$pred_dep1, test$heart_attack)
+kable(train_rateI, caption = "Training Error Rate with Interaction")
+kable(test_rateI, caption = "Test Error Rate with Interaction")
+
+```
+
+With the same tuning to the interaction model, we see a test and training error rate of `r test_rateI` and `r train_rateI`, respectively which is just slightly worse and one of the coefficients is not statistically significant. We continue without the interaction.
+
+```{r}
+do.chunk <- function(chunkid, folddef, dat, ...){ # Get training index
+train = (folddef!=chunkid)
+# Get training set and validation set
+dep.train = heartData[train, ]
+dep.val = heartData[-train, ]
+# Train logistic regression model on training data
+fit.train = glm(heart_attack ~ diabetes + total_cholesterol, family = binomial, 
+                data = dep.train) # get predicted value on the validation set
+pred.val = predict(fit.train, newdata = dep.val, type = "response") 
+pred.val = ifelse(pred.val > .355, 1,0)
+data.frame(fold = chunkid, val.error = mean(pred.val != dep.val$heart_attack))
+}
+nfold = 10
+
+folds =cut(1:nrow(heartData), breaks=nfold, labels=FALSE) %>% sample() #folds
+
+error.folds = NULL
+
+for(j in seq(10)){
+  tmp = do.chunk(chunkid=j, folddef=folds, heartData)
+  error.folds =rbind(error.folds, tmp)# combine results 
+  }
+test_error_rate_cv <- mean(error.folds$val.error)
+# our test error rate
+kable(error.folds, caption = "Cross Validation for Test Error Rate on Logistic Model")
+```
+
+Here we apply Cross Validation with the same tuning to our chosen model without the interaction and validate the test error rate with an overall rate of `r test_error_rate_cv`.
+
+```{r}
+
+set.seed(252705)
+pred <- prediction(prob_test, test$heart_attack)
+perf <- performance(pred, measure = "tpr", x.measure="fpr") 
+plot(perf, col=2, lwd=3, main="ROC curve")
+abline(0,1)
+auc =performance(pred, "auc")@y.values 
+kable(auc, caption = "AUC for Logistic Model")
+```
+
+We calculate an AUC of `r auc`, which means that our logistic model is pretty accurate and has somewhat good reliability in its predictions.
+
+# Brief on Findings
+
+Here we were able to somewhat accurately predict heart attacks using a logistic model with the predictors of having diabetes and the log of a persons total cholesterol level. We attempted to use the interaction between the two but found in insignificant, while having diabetes and the log of total cholesterol were found to be very significant in a model of their own. Going back to our original hypotheses, $H_0$: $\beta_1$ = $\beta_2$ = $\beta_1$:$\beta_2$ = 0, $H_1$: at least one of $\beta_1$, $\beta_1$, $\beta_1$:$\beta_2$ $\neq$ 0, this leads us the reject our null hypothesis of none of the coefficients having an influence on whether a person had a heart attack and find that there is statistically significant evidence that the presence of diabetes and the increase of the log of total cholesterol may increase the probability of occurence of a heart attack.\
+\
+
+```{r}
+#| include: false
+# draw a random sample
+set.seed(20250509)
+heart_disease_sample <- heart_disease[sample(nrow(heart_disease), 500), ]
+```
+
+## Hypothesis 3 Exploration
+
+Smoking is widely known to contribute to cardiovascular problems, including elevated blood pressure. In this section, we are going to ask this question: Do smokers have higher systolic blood pressure?
+
+$H_0$: There is no difference in systolic blood pressure between smokers and nonsmokers. ($\mu_{\text{smokers}} = \mu_{\text{non-smokers}}$)
+
+$H_1$: Smokers have higher systolic blood pressure than nonsmokers. ($\mu_{\text{smokers}} > \mu_{\text{non-smokers}}$)
+
+We want to find out whether smokers tend to have higher systolic blood pressure than non-smokers. Since systolic_bp is a continuous variable and smoking is binary, we can begin with a two-sample t-test, and a linear regression model.
+
+## Visualization with Boxplot
+
+```{r}
+# Boxplot: Systolic BP by Smoking Status
+Sys_smoke <- ggplot(heart_disease, aes(x = smoking, y = systolic_bp)) +
+  geom_boxplot(fill = "orange") +
+  labs(x = "Smoking (0 = No, 1 = Yes)", y = "Systolic BP (mmHg)") +
+  ggtitle("Systolic Blood Pressure by Smoking Status") +
+  theme(plot.title = element_text(size = 8))
+
+Sys_smoke
+```
+
+From the box plot, we find that:
+
+Median Comparison: The boxplot shows that smokers tend to have a slightly lower median systolic blood pressure than non-smokers.
+
+## Two-Sample t-Test
+
+```{r}
+t.test(
+  systolic_bp ~ smoking,
+  data = heart_disease_sample,
+  alternative = "less"
+)
+```
+
+Since the p-value is far above 0.05, we fail to reject the null hypothesis that we do not have evidence to support the claim that smokers have higher systolic blood pressure.
+
+Based on the t-test, we do not find statistically significant evidence that smokers have higher systolic blood pressure. The hypothesis is not supported in our sample, and additional modeling with control variables (like age) may be required to draw stronger conclusions.
+
+## Unadjust model
+
+```{r}
+model3_simple <- lm(systolic_bp ~ smoking, data = heart_disease_sample)
+summary(model3_simple)
+
+par(mfrow = c(2, 2))
+plot(model3_simple)
+```
+
+\textbf{Intercept} (( \beta\_0 = 121.52 )): Indicates that the average systolic blood pressure (SBP) for non-smokers is 121.52 mmHg
+
+\textbf{Smoking coefficient} (( \beta\_1 = -6.498 ), ( p = 0.00032 \< 0.05 )): Indicates that smokers have on average 6.498 mmHg lower SBP than non-smokers, and this difference is statistically significant.
+
+\textbf{R\textsuperscript{2} ≈ 0.0257}: Suggests that smoking status alone explains only 2.6% of the variation in systolic blood pressure. The remaining 97.4% is likely due to other factors such as age, body weight, heredity, or medication.
+
+Diagnostic plots (residuals vs fitted, normal Q-Q, scale-location, residuals vs leverage) show no clear violation of model assumptions, suggesting that the linear model is reasonably appropriate.
+
+In conclusion, without adjusting for any confounders, the data show that smokers tend to have significantly lower systolic blood pressure than non-smokers, in the opposite direction of the original hypothesis.
+
+## Checking for confounders
+
+```{r}
+ggplot(heart_disease_sample, aes(
+       x = factor(smoking, labels = c("Non-Smoker", "Smoker")),
+       y = age
+     )) +
+  geom_boxplot(fill = "lightgreen", outlier.color = "red") +
+  labs(
+    title = "Age Distribution by Smoking Status",
+    x = "Smoking Status",
+    y = "Age (years)"
+  ) +
+  theme_minimal()
+
+t.test(age ~ smoking, data = heart_disease_sample, alternative = "two.sided")
+```
+
+Mean age of non-smokers: 50.38 years
+
+Mean age of smokers: 46.46 years
+
+Since the p-value smaller than 0,05, we conclude that smokers are significantly younger than non-smokers in this sample.
+
+Because age is known to correlate with systolic blood pressure, this indicates that age is a likely confounder: younger individuals tend to have lower blood pressure.
+
+## Adjust Linear Regression
+
+```{r}
+heart_disease_sample$sex <- as.factor(heart_disease_sample$sex)
+
+model3_adjusted <- lm(systolic_bp ~ smoking + age + sex, data = heart_disease_sample)
+summary(model3_adjusted)
+
+par(mfrow = c(2, 2))
+plot(model3_adjusted)
+```
+
+\textbf{Intercept (98.33)}: This is the predicted systolic blood pressure for a baseline individual---a zero-year-old female non-smoker.
+
+\textbf{Smoking (–5.2795, p = 0.00171)}: After controlling for age and sex, smokers have on average about \textbf{5.28 mmHg lower} systolic blood pressure than non-smokers. Because the p-value is 0.00171 (( \< 0.05 )), this difference is statistically significant. In other words, once we account for age and sex, smoking status is associated with a lower predicted systolic BP in this sample.
+
+\textbf{Age (+0.43014, p \( < 2 \times 10^{-16} \))}: Each additional year of age is associated with a \textbf{0.43 mmHg increase} in systolic blood pressure, holding smoking status and sex constant. This effect is highly significant, confirming that blood pressure rises steadily with age.
+
+\textbf{Sex (+3.08064, p = 0.01880)}: Males (sex = 1) have an average of \textbf{3.08 mmHg higher} systolic blood pressure than females, controlling for smoking and age. Since the p-value (0.01880) is below 0.05, this sex difference is also statistically significant.
+
+\textbf{Model Fit (R\textsuperscript{2} = 0.1731, Adjusted R\textsuperscript{2} = 0.1681)}: The three predictors together explain about \textbf{17.3\%} of the variance in systolic blood pressure. In other words, age, sex, and smoking status account for a modest but meaningful portion of the differences in systolic BP across individuals in our sample.
+
+## conclusion
+
+Although our original hypothesis predicted that smokers would exhibit higher systolic blood pressure, the adjusted regression reveals the opposite once age and sex are taken into account: smokers actually have, on average, lower systolic BP than non-smokers—about 5.28 mmHg lower—and this difference is statistically significant. Age remains the strongest predictor (roughly +0.43 mmHg per year), and being male adds about +3.08 mmHg. The fact that smoking status “reverses” when age is controlled indicates that smokers in our sample are generally younger, which masks the true association. In short, the observed lower blood pressure among smokers is explained by their younger average age; after adjustment, smoking itself does not raise systolic blood pressure.
